@@ -26,20 +26,46 @@ import (
 	"github.com/gorilla/mux"
 	vaultapi "github.com/hashicorp/vault/api"
 	"github.com/stretchr/testify/assert"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	policyapi "kubevault.dev/operator/apis/policy/v1alpha1"
 )
 
 var (
 	goodPBind = &pBinding{
-		policies:     []string{"test,hi"},
-		saNames:      []string{"test1,test2"},
-		saNamespaces: []string{"test3,test4"},
-		ttl:          "100",
-		maxTTL:       "100",
-		period:       "100",
-		path:         "kubernetes",
+		policies: []string{"test,hi"},
+		authKubernetes: &pBindingKubernetes{
+			name:         "ok",
+			SaNames:      []string{"test1,test2"},
+			SaNamespaces: []string{"test3,test4"},
+			TTL:          "100",
+			MaxTTL:       "100",
+			Period:       "100",
+			path:         "kubernetes",
+		},
+		authAppRole: &pBindingAppRole{
+			roleName:             "ok",
+			path:                 "approle",
+			BindSecretID:         true,
+			SecretIDBoundCidrs:   []string{"192.168.0.200/32"},
+			SecretIDNumUses:      200,
+			SecretIDTTL:          "60",
+			EnableLocalSecretIDs: true,
+			TokenTTL:             60,
+			TokenMaxTTL:          60,
+			TokenPolicies:        []string{"test,hi"},
+			TokenBoundCidrs:      []string{"192.168.0.200/32"},
+			TokenExplicitMaxTTL:  60,
+			TokenNoDefaultPolicy: false,
+			TokenNumUses:         60,
+			TokenPeriod:          60,
+			TokenType:            "default",
+		},
 	}
-	badPBind = &pBinding{}
+	badPBind = &pBinding{
+		authKubernetes: &pBindingKubernetes{},
+		authAppRole:    &pBindingAppRole{},
+	}
 )
 
 func isKeyValExist(store map[string]interface{}, key string, val interface{}) bool {
@@ -75,8 +101,22 @@ func isKeyValExist(store map[string]interface{}, key string, val interface{}) bo
 		default:
 			return false
 		}
-
+	case bool:
+		switch z := v.(type) {
+		case bool:
+			return z == y
+		default:
+			return false
+		}
+	case int64:
+		switch z := v.(type) {
+		case string:
+			return z == y
+		default:
+			return false
+		}
 	}
+
 	return false
 }
 
@@ -89,11 +129,11 @@ func NewFakeVaultServer() *httptest.Server {
 		fmt.Println("***")
 		fmt.Println(v)
 		fmt.Println("***")
-		if ok := isKeyValExist(v, "bound_service_account_names", goodPBind.saNames); !ok {
+		if ok := isKeyValExist(v, "bound_service_account_names", goodPBind.authKubernetes.SaNames); !ok {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		if ok := isKeyValExist(v, "bound_service_account_namespaces", goodPBind.saNamespaces); !ok {
+		if ok := isKeyValExist(v, "bound_service_account_namespaces", goodPBind.authKubernetes.SaNamespaces); !ok {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
@@ -101,24 +141,24 @@ func NewFakeVaultServer() *httptest.Server {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		if ok := isKeyValExist(v, "ttl", goodPBind.ttl); !ok {
+		if ok := isKeyValExist(v, "ttl", goodPBind.authKubernetes.TTL); !ok {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		if ok := isKeyValExist(v, "max_ttl", goodPBind.maxTTL); !ok {
+		if ok := isKeyValExist(v, "max_ttl", goodPBind.authKubernetes.MaxTTL); !ok {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		if ok := isKeyValExist(v, "period", goodPBind.period); !ok {
+		if ok := isKeyValExist(v, "period", goodPBind.authKubernetes.Period); !ok {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
 		w.WriteHeader(http.StatusOK)
-	}).Methods(http.MethodPost)
+	}).Methods(http.MethodPut)
 
 	router.HandleFunc("/v1/auth/test/role/try", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-	}).Methods(http.MethodPost)
+	}).Methods(http.MethodPut)
 
 	router.HandleFunc("/v1/auth/kubernetes/role/ok", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -132,7 +172,73 @@ func NewFakeVaultServer() *httptest.Server {
 		w.WriteHeader(http.StatusBadRequest)
 	}).Methods(http.MethodDelete)
 
+	router.HandleFunc("/v1/auth/approle/role/ok", func(w http.ResponseWriter, r *http.Request) {
+		v := map[string]interface{}{}
+		utilruntime.Must(json.NewDecoder(r.Body).Decode(&v))
+		fmt.Println("***")
+		fmt.Println(v)
+		fmt.Println("***")
+		if ok := isKeyValExist(v, "bind_secret_id", goodPBind.authAppRole.BindSecretID); !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		if ok := isKeyValExist(v, "secret_id_bound_cidrs", goodPBind.authAppRole.SecretIDBoundCidrs); !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		if ok := isKeyValExist(v, "secret_id_num_uses", goodPBind.authAppRole.SecretIDNumUses); !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		// if ok := isKeyValExist(v, "secret_id_ttl", goodPBind.authAppRole.SecretIDTTL); !ok {
+		// 	w.WriteHeader(http.StatusBadRequest)
+		// 	return
+		// }
+		// if ok := isKeyValExist(v, "enable_local_secret_ids", goodPBind.authAppRole.EnableLocalSecretIDs); !ok {
+		// 	w.WriteHeader(http.StatusBadRequest)
+		// 	return
+		// }
+		// if ok := isKeyValExist(v, "token_ttl", goodPBind.authAppRole.TokenTTL); !ok {
+		// 	w.WriteHeader(http.StatusBadRequest)
+		// 	return
+		// }
+		// TokenTTL             int64    `json:"token_ttl,omitempty"`
+		// TokenMaxTTL          int64    `json:"token_max_ttl,omitempty"`
+		// TokenPolicies        []string `json:"token_policies,omitempty"`
+		// TokenBoundCidrs      []string `json:"token_bound_cidrs,omitempty"`
+		// TokenExplicitMaxTTL  int64    `json:"token_explicit_max_ttl,omitempty"`
+		// TokenNoDefaultPolicy bool     `json:"token_no_default_policy,omitempty"`
+		// TokenNumUses         int64    `json:"token_num_uses"`
+		// TokenPeriod          int64    `json:"token_period,omitempty"`
+		// TokenType            string   `json:"token_type,omitempty"`
+
+		w.WriteHeader(http.StatusOK)
+	}).Methods(http.MethodPut)
+
+	router.HandleFunc("/v1/auth/approle/role/ok", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}).Methods(http.MethodDelete)
+
+	router.HandleFunc("/v1/auth/approle/role/err", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+	}).Methods(http.MethodDelete)
+
 	return httptest.NewServer(router)
+}
+
+func simpleVaultPolicyBinding() *policyapi.VaultPolicyBinding {
+	return &policyapi.VaultPolicyBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "simple",
+			Namespace: "test",
+		},
+		Spec: policyapi.VaultPolicyBindingSpec{
+			SubjectRef: policyapi.SubjectRef{
+				Kubernetes: &policyapi.KubernetesSubjectRef{},
+				AppRole:    &policyapi.AppRoleSubjectRef{},
+			},
+		},
+	}
 }
 
 func TestEnsure(t *testing.T) {
@@ -161,7 +267,7 @@ func TestEnsure(t *testing.T) {
 		{
 			testName:  "no error, auth enabled in different path",
 			name:      "try",
-			pb:        func(p pBinding) *pBinding { p.path = "test"; return &p }(*goodPBind),
+			pb:        func(p pBinding) *pBinding { p.authKubernetes.name = "try"; p.authKubernetes.path = "test"; return &p }(*goodPBind),
 			expectErr: false,
 		},
 		{
@@ -174,7 +280,7 @@ func TestEnsure(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.testName, func(t *testing.T) {
-			err := c.pb.Ensure(c.name)
+			err := c.pb.Ensure(simpleVaultPolicyBinding())
 			if c.expectErr {
 				assert.NotNil(t, err)
 			} else {
@@ -210,7 +316,7 @@ func TestDelete(t *testing.T) {
 		{
 			testName:  "no error, auth enabled in different path",
 			name:      "try",
-			pb:        func(p pBinding) *pBinding { p.path = "test"; return &p }(*goodPBind),
+			pb:        func(p pBinding) *pBinding { p.authKubernetes.path = "test"; return &p }(*goodPBind),
 			expectErr: false,
 		},
 		{
@@ -223,7 +329,7 @@ func TestDelete(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.testName, func(t *testing.T) {
-			err := c.pb.Delete(c.name)
+			err := c.pb.Delete(simpleVaultPolicyBinding())
 			if c.expectErr {
 				assert.NotNil(t, err)
 			} else {
