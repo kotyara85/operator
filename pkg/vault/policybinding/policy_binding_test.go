@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"testing"
 
 	"github.com/gorilla/mux"
@@ -56,7 +57,7 @@ var (
 			TokenPolicies:        []string{"test,hi"},
 			TokenBoundCidrs:      []string{"192.168.0.200/32"},
 			TokenExplicitMaxTTL:  60,
-			TokenNoDefaultPolicy: false,
+			TokenNoDefaultPolicy: true,
 			TokenNumUses:         60,
 			TokenPeriod:          60,
 			TokenType:            "default",
@@ -69,54 +70,28 @@ var (
 )
 
 func isKeyValExist(store map[string]interface{}, key string, val interface{}) bool {
-	v, ok := store[key]
-	if !ok {
-		return ok
-	}
-
-	switch y := val.(type) {
-	case []string:
+	if v, ok := store[key]; ok {
 		switch x := v.(type) {
+		case string:
+			return x == val
+		case int64:
+			return x == val
+		case float64:
+			return int64(x) == val
+		case bool:
+			return x == val
 		case []string:
-			for p := range x {
-				if x[p] != y[p] {
-					return false
-				}
-			}
-			return true
+			return reflect.DeepEqual(x, val)
 		case []interface{}:
 			for p := range x {
-				if x[p].(string) != y[p] {
+				if x[p].(string) != x[p] {
 					return false
 				}
 			}
 			return true
 		default:
-			return false
-		}
-	case string:
-		switch z := v.(type) {
-		case string:
-			return z == y
-		default:
-			return false
-		}
-	case bool:
-		switch z := v.(type) {
-		case bool:
-			return z == y
-		default:
-			return false
-		}
-	case int64:
-		switch z := v.(type) {
-		case string:
-			return z == y
-		default:
-			return false
 		}
 	}
-
 	return false
 }
 
@@ -190,28 +165,54 @@ func NewFakeVaultServer() *httptest.Server {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		// if ok := isKeyValExist(v, "secret_id_ttl", goodPBind.authAppRole.SecretIDTTL); !ok {
-		// 	w.WriteHeader(http.StatusBadRequest)
-		// 	return
-		// }
-		// if ok := isKeyValExist(v, "enable_local_secret_ids", goodPBind.authAppRole.EnableLocalSecretIDs); !ok {
-		// 	w.WriteHeader(http.StatusBadRequest)
-		// 	return
-		// }
-		// if ok := isKeyValExist(v, "token_ttl", goodPBind.authAppRole.TokenTTL); !ok {
-		// 	w.WriteHeader(http.StatusBadRequest)
-		// 	return
-		// }
-		// TokenTTL             int64    `json:"token_ttl,omitempty"`
-		// TokenMaxTTL          int64    `json:"token_max_ttl,omitempty"`
-		// TokenPolicies        []string `json:"token_policies,omitempty"`
-		// TokenBoundCidrs      []string `json:"token_bound_cidrs,omitempty"`
-		// TokenExplicitMaxTTL  int64    `json:"token_explicit_max_ttl,omitempty"`
-		// TokenNoDefaultPolicy bool     `json:"token_no_default_policy,omitempty"`
-		// TokenNumUses         int64    `json:"token_num_uses"`
-		// TokenPeriod          int64    `json:"token_period,omitempty"`
-		// TokenType            string   `json:"token_type,omitempty"`
-
+		if ok := isKeyValExist(v, "secret_id_ttl", goodPBind.authAppRole.SecretIDTTL); !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		if ok := isKeyValExist(v, "enable_local_secret_ids", goodPBind.authAppRole.EnableLocalSecretIDs); !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		if ok := isKeyValExist(v, "token_ttl", goodPBind.authAppRole.TokenTTL); !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		if ok := isKeyValExist(v, "token_ttl", goodPBind.authAppRole.TokenTTL); !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		if ok := isKeyValExist(v, "token_max_ttl", goodPBind.authAppRole.TokenMaxTTL); !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		if ok := isKeyValExist(v, "token_policies", goodPBind.authAppRole.TokenPolicies); !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		if ok := isKeyValExist(v, "token_bound_cidrs", goodPBind.authAppRole.TokenBoundCidrs); !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		if ok := isKeyValExist(v, "token_explicit_max_ttl", goodPBind.authAppRole.TokenExplicitMaxTTL); !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		if ok := isKeyValExist(v, "token_no_default_policy", goodPBind.authAppRole.TokenNoDefaultPolicy); !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		if ok := isKeyValExist(v, "token_num_uses", goodPBind.authAppRole.TokenNumUses); !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		if ok := isKeyValExist(v, "token_period", goodPBind.authAppRole.TokenPeriod); !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		if ok := isKeyValExist(v, "token_type", goodPBind.authAppRole.TokenType); !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
 		w.WriteHeader(http.StatusOK)
 	}).Methods(http.MethodPut)
 
